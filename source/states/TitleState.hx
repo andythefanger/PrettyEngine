@@ -13,6 +13,9 @@ import openfl.Assets;
 import openfl.display.Bitmap;
 import openfl.display.BitmapData;
 
+import flixel.addons.display.FlxBackdrop;
+import flixel.addons.display.FlxGridOverlay;
+
 import shaders.ColorSwap;
 
 import states.StoryMenuState;
@@ -45,6 +48,7 @@ class TitleState extends MusicBeatState
 
 	var credGroup:FlxGroup = new FlxGroup();
 	var textGroup:FlxGroup = new FlxGroup();
+	var ActualTitle:FlxGroup = new FlxGroup();
 	var blackScreen:FlxSprite;
 	var credTextShit:Alphabet;
 	var ngSpr:FlxSprite;
@@ -111,7 +115,9 @@ class TitleState extends MusicBeatState
 		#end
 	}
 
+	var blackScreen2:FlxSprite;
 	var logoBl:FlxSprite;
+	var Autism:FlxSprite;
 	var gfDance:FlxSprite;
 	var danceLeft:Bool = false;
 	var titleText:FlxSprite;
@@ -131,9 +137,28 @@ class TitleState extends MusicBeatState
 		logoBl.frames = Paths.getSparrowAtlas('logoBumpin');
 		logoBl.antialiasing = ClientPrefs.data.antialiasing;
 
+		Autism = new FlxSprite(0,0).loadGraphic(Paths.image('Autism'));
+		Autism.scale.x = 0; 
+		Autism.scale.y = 0; 
+		Autism.screenCenter();
+		Autism.updateHitbox();
+
+		blackScreen2 = new FlxSprite().makeGraphic(1, 1, FlxColor.BLACK);
+		blackScreen2.scale.set(FlxG.width, FlxG.height);
+		blackScreen2.updateHitbox();
+		blackScreen2.alpha = 0;
+
+		var grid:FlxBackdrop = new FlxBackdrop(FlxGridOverlay.createGrid(80, 80, 160, 160, true, 0x33005EFF, 0x0));
+        grid.velocity.set(40, 40);
+        grid.alpha = 0;
+        FlxTween.tween(grid, {alpha: 1}, 0.5, {ease: FlxEase.quadOut});
+        add(grid);
+
 		logoBl.animation.addByPrefix('bump', 'logo bumpin', 24, false);
 		logoBl.animation.play('bump');
+		logoBl.screenCenter(X);
 		logoBl.updateHitbox();
+		ActualTitle.add(logoBl);
 
 		gfDance = new FlxSprite(gfPosition.x, gfPosition.y);
 		gfDance.antialiasing = ClientPrefs.data.antialiasing;
@@ -180,11 +205,11 @@ class TitleState extends MusicBeatState
 		}
 		titleText.animation.play('idle');
 		titleText.updateHitbox();
+		ActualTitle.add(titleText);
 
 		blackScreen = new FlxSprite().makeGraphic(1, 1, FlxColor.BLACK);
 		blackScreen.scale.set(FlxG.width, FlxG.height);
 		blackScreen.updateHitbox();
-		credGroup.add(blackScreen);
 
 		credTextShit = new Alphabet(0, 0, "", true);
 		credTextShit.screenCenter();
@@ -197,9 +222,6 @@ class TitleState extends MusicBeatState
 		ngSpr.screenCenter(X);
 		ngSpr.antialiasing = ClientPrefs.data.antialiasing;
 
-		add(gfDance);
-		add(logoBl); //FNF Logo
-		add(titleText); //"Press Enter to Begin" text
 		add(credGroup);
 		add(ngSpr);
 
@@ -246,7 +268,7 @@ class TitleState extends MusicBeatState
 	
 					if (titleJSON.backgroundSprite != null && titleJSON.backgroundSprite.trim().length > 0)
 					{
-						var bg:FlxSprite = new FlxSprite().loadGraphic(Paths.image(titleJSON.backgroundSprite));
+						var bg:FlxSprite = new FlxSprite().loadGraphic(Paths.image("checker"));
 						bg.antialiasing = ClientPrefs.data.antialiasing;
 						add(bg);
 					}
@@ -374,13 +396,19 @@ class TitleState extends MusicBeatState
 			
 			if(pressedEnter)
 			{
-				titleText.color = FlxColor.WHITE;
 				titleText.alpha = 1;
 				
 				if(titleText != null) titleText.animation.play('press');
+				logoBl.acceleration.y = 800; // fall with gravity
+		        logoBl.velocity.y = -200;
+		        logoBl.angularVelocity = (Math.random() - 3) * 50;
+				FlxTween.tween(Autism.scale, {x: 1 ,y:1}, 1, {ease: FlxEase.quadOut});
 
-				FlxG.camera.flash(ClientPrefs.data.flashing ? FlxColor.WHITE : 0x4CFFFFFF, 1);
 				FlxG.sound.play(Paths.sound('confirmMenu'), 0.7);
+
+				FlxTween.tween(camera, {zoom: 5}, 2, {ease: FlxEase.cubeIn});
+				FlxTween.tween(blackScreen2, {alpha: 1}, 0.95, {ease: FlxEase.cubeIn});
+				
 
 				transitioning = true;
 				// FlxG.sound.music.stop();
@@ -501,8 +529,14 @@ class TitleState extends MusicBeatState
 	{
 		super.beatHit();
 
+		if (transitioning != true)
+		{
+			FlxG.camera.zoom = 1.05;
+			FlxTween.tween(FlxG.camera, {zoom: 1}, 0.5, {ease: FlxEase.circOut});
+		}
+
 		if(logoBl != null)
-			logoBl.animation.play('bump', true);
+			//logoBl.animation.play('bump', true);
 
 		if(gfDance != null)
 		{
@@ -566,6 +600,8 @@ class TitleState extends MusicBeatState
 	{
 		if (!skippedIntro)
 		{
+			add(ActualTitle);
+			add(blackScreen2);
 			#if TITLE_SCREEN_EASTER_EGG
 			if (playJingle) //Ignore deez
 			{

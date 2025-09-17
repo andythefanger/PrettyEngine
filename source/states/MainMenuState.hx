@@ -32,6 +32,7 @@ class MainMenuState extends MusicBeatState
 	var menuItems:FlxTypedGroup<FlxSprite>;
 	var leftItem:FlxSprite;
 	var rightItem:FlxSprite;
+	var blackScreen2:FlxSprite;
 
 	// Only 3 options
 	var optionShit:Array<String> = [
@@ -122,6 +123,11 @@ class MainMenuState extends MusicBeatState
 		fnfVer.setFormat(Paths.font("vcr.ttf"), 16, FlxColor.WHITE, LEFT, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
 		add(fnfVer);
 
+		blackScreen2 = new FlxSprite().makeGraphic(1, 1, FlxColor.BLACK);
+		blackScreen2.scale.set(FlxG.width, FlxG.height);
+		blackScreen2.updateHitbox();
+		blackScreen2.alpha = 0;
+
 		changeItem();
 		FlxG.camera.follow(camFollow, null, 0.15);
 	}
@@ -199,9 +205,12 @@ class MainMenuState extends MusicBeatState
 
 	function selectOption(item:FlxSprite)
 	{
+		FlxTween.tween(camera, {zoom: 5}, 2, {ease: FlxEase.cubeIn});
+		FlxTween.tween(blackScreen2, {alpha: 1}, 0.95, {ease: FlxEase.cubeIn});
 		selectedSomethin = true;
 		item.acceleration.y = 800; // fall with gravity
 		item.velocity.y = -200;
+		item.angularVelocity = (Math.random() - 3) * 50;
 
 		new FlxTimer().start(0.8, function(_) {
 			if (item == rightItem) {

@@ -41,6 +41,11 @@ class FreeplayState extends MusicBeatState
 	private var curPlaying:Bool = false;
 
 	private var iconArray:Array<HealthIcon> = [];
+	
+	// Variables para efectos visuales
+	private var hoveredItem:Int = -1;
+	private var isTransitioning:Bool = false;
+	private var particlesGroup:FlxTypedGroup<FlxSprite>;
 
 	var bg:FlxSprite;
 	var intendedColor:Int;
@@ -62,6 +67,9 @@ class FreeplayState extends MusicBeatState
 		persistentUpdate = true;
 		PlayState.isStoryMode = false;
 		WeekData.reloadWeekFiles(false);
+
+		// Inicializar grupo de partículas para el efecto de desintegración
+		particlesGroup = new FlxTypedGroup<FlxSprite>();
 
 		#if DISCORD_ALLOWED
 		// Updating Discord Rich Presence
@@ -109,6 +117,12 @@ class FreeplayState extends MusicBeatState
 		bg.antialiasing = ClientPrefs.data.antialiasing;
 		add(bg);
 		bg.screenCenter();
+
+		var grid:FlxBackdrop = new FlxBackdrop(FlxGridOverlay.createGrid(80, 80, 160, 160, true, 0x33FFFFFF, 0x0));
+		grid.velocity.set(40, 40);
+		grid.alpha = 0;
+		FlxTween.tween(grid, {alpha: 1}, 0.5, {ease: FlxEase.quadOut});
+		add(grid);
 
 		grpSongs = new FlxTypedGroup<Alphabet>();
 		add(grpSongs);
@@ -177,12 +191,6 @@ class FreeplayState extends MusicBeatState
 		bottomBG.alpha = 0.6;
 		add(bottomBG);
 
-        var grid:FlxBackdrop = new FlxBackdrop(FlxGridOverlay.createGrid(80, 80, 160, 160, true, 0x33FFFFFF, 0x0));
-		grid.velocity.set(40, 40);
-		grid.alpha = 0;
-		FlxTween.tween(grid, {alpha: 1}, 0.5, {ease: FlxEase.quadOut});
-		add(grid);
-
 
 		var leText:String = Language.getPhrase("freeplay_tip", "Press SPACE to listen to the Song / Press CTRL to open the Gameplay Changers Menu / Press RESET to Reset your Score and Accuracy.");
 		bottomString = leText;
@@ -191,6 +199,9 @@ class FreeplayState extends MusicBeatState
 		bottomText.setFormat(Paths.font("vcr.ttf"), size, FlxColor.WHITE, CENTER);
 		bottomText.scrollFactor.set();
 		add(bottomText);
+		
+		// Añadir grupo de partículas después de los elementos de la interfaz
+		add(particlesGroup);
 		
 		player = new MusicPlayer(this);
 		add(player);
@@ -239,6 +250,58 @@ class FreeplayState extends MusicBeatState
 			lerpScore = intendedScore;
 		if (Math.abs(lerpRating - intendedRating) <= 0.01)
 			lerpRating = intendedRating;
+			
+		// Detectar hover con el mouse si no estamos en transición
+		if (!isTransitioning && !player.playingMusic)
+		{
+			var oldHoveredItem = hoveredItem;
+			hoveredItem = -1;
+			
+			for (i in 0...grpSongs.members.length)
+			{
+				var item = grpSongs.members[i];
+				if (item.visible && FlxG.mouse.overlaps(item))
+				{
+					hoveredItem = i;
+					break;
+				}
+			}
+			
+			// Actualizar escalas si cambió el elemento bajo el cursor
+			if (oldHoveredItem != hoveredItem)
+			{
+				if (oldHoveredItem != -1 && oldHoveredItem < grpSongs.members.length)
+				{
+					FlxTween.tween(grpSongs.members[oldHoveredItem].scale, {x: 1.0, y: 1.0}, 0.1, {ease: FlxEase.quadOut});
+				}
+				
+				if (hoveredItem != -1)
+				{
+					FlxTween.tween(grpSongs.members[hoveredItem].scale, {x: 1.1, y: 1.1}, 0.1, {ease: FlxEase.quadOut});
+				}
+			}
+			
+			// Detectar clic en el elemento bajo el cursor
+			if (hoveredItem != -1 && FlxG.mouse.justPressed && !isTransitioning)
+			{
+				if (hoveredItem == curSelected)
+				{
+					// Iniciar efecto de desintegración y transición
+					createDisintegrationEffect(grpSongs.members[curSelected]);
+					isTransitioning = true;
+					
+					// Programar la carga de la canción después del efecto
+					new FlxTimer().start(1.0, function(_) {
+						loadSelectedSong();
+					});
+				}
+				else
+				{
+					// Cambiar selección al elemento bajo el cursor
+					changeSelection(hoveredItem - curSelected);
+				}
+			}
+		}
 
 		var ratingSplit:Array<String> = Std.string(CoolUtil.floorDecimal(lerpRating * 100, 2)).split('.');
 		if(ratingSplit.length < 2) //No decimals, add an empty space
@@ -412,54 +475,16 @@ class FreeplayState extends MusicBeatState
 				player.pauseOrResume(!player.playing);
 			}
 		}
-		else if (controls.ACCEPT && !player.playingMusic)
+		else if (controls.ACCEPT && !player.playingMusic && !isTransitioning)
 		{
-			persistentUpdate = false;
-			var songLowercase:String = Paths.formatToSongPath(songs[curSelected].songName);
-			var poop:String = Highscore.formatSong(songLowercase, curDifficulty);
-
-			try
-			{
-				Song.loadFromJson(poop, songLowercase);
-				PlayState.isStoryMode = false;
-				PlayState.storyDifficulty = curDifficulty;
-
-				trace('CURRENT WEEK: ' + WeekData.getWeekFileName());
-			}
-			catch(e:haxe.Exception)
-			{
-				trace('ERROR! ${e.message}');
-
-				var errorStr:String = e.message;
-				if(errorStr.contains('There is no TEXT asset with an ID of')) errorStr = 'Missing file: ' + errorStr.substring(errorStr.indexOf(songLowercase), errorStr.length-1); //Missing chart
-				else errorStr += '\n\n' + e.stack;
-
-				missingText.text = 'ERROR WHILE LOADING CHART:\n$errorStr';
-				missingText.screenCenter(Y);
-				missingText.visible = true;
-				missingTextBG.visible = true;
-				FlxG.sound.play(Paths.sound('cancelMenu'));
-
-				updateTexts(elapsed);
-				super.update(elapsed);
-				return;
-			}
-
-			@:privateAccess
-			if(PlayState._lastLoadedModDirectory != Mods.currentModDirectory)
-			{
-				trace('CHANGED MOD DIRECTORY, RELOADING STUFF');
-				Paths.freeGraphicsFromMemory();
-			}
-			LoadingState.prepareToSong();
-			LoadingState.loadAndSwitchState(new PlayState());
-			#if !SHOW_LOADING_SCREEN FlxG.sound.music.stop(); #end
-			stopMusicPlay = true;
-
-			destroyFreeplayVocals();
-			#if (MODS_ALLOWED && DISCORD_ALLOWED)
-			DiscordClient.loadModRPC();
-			#end
+			// Iniciar efecto de desintegración y transición con Enter
+			createDisintegrationEffect(grpSongs.members[curSelected]);
+			isTransitioning = true;
+			
+			// Programar la carga de la canción después del efecto
+			new FlxTimer().start(1.0, function(_) {
+				loadSelectedSong();
+			});
 		}
 		else if(controls.RESET && !player.playingMusic)
 		{
@@ -606,6 +631,121 @@ class FreeplayState extends MusicBeatState
 		}
 	}
 
+	/**
+	 * Crea un efecto de desintegración para el elemento seleccionado
+	 * @param target El elemento que se va a desintegrar
+	 */
+	private function createDisintegrationEffect(target:Alphabet):Void
+	{
+		// Reproducir sonido de selección
+		FlxG.sound.play(Paths.sound('confirmMenu'));
+		
+		// Ocultar el elemento original
+		target.visible = false;
+		
+		// Obtener las dimensiones y posición del elemento
+		var width:Int = Std.int(target.width);
+		var height:Int = Std.int(target.height);
+		var posX:Float = target.x;
+		var posY:Float = target.y;
+		
+		// Crear partículas basadas en el tamaño del elemento
+		var particleSize:Int = 8; // Tamaño de cada partícula
+		var numParticlesX:Int = Std.int(width / particleSize);
+		var numParticlesY:Int = Std.int(height / particleSize);
+		
+		// Crear partículas
+		for (x in 0...numParticlesX)
+		{
+			for (y in 0...numParticlesY)
+			{
+				var particle:FlxSprite = new FlxSprite(posX + x * particleSize, posY + y * particleSize);
+				particle.makeGraphic(particleSize, particleSize, FlxColor.WHITE);
+				
+				// Colorear la partícula para que coincida con el color del texto
+				particle.color = 0xFFFFFFFF;
+				
+				// Añadir velocidad aleatoria
+				var angle:Float = FlxG.random.float(0, 2 * Math.PI);
+				var speed:Float = FlxG.random.float(50, 200);
+				particle.velocity.set(Math.cos(angle) * speed, Math.sin(angle) * speed);
+				
+				// Añadir gravedad
+				particle.acceleration.y = 300 + FlxG.random.float(0, 200);
+				
+				// Añadir rotación
+				particle.angularVelocity = FlxG.random.float(-360, 360);
+				
+				// Añadir desvanecimiento
+				FlxTween.tween(particle, {alpha: 0}, FlxG.random.float(0.6, 1.0), {
+					onComplete: function(_) {
+						particle.kill();
+						particlesGroup.remove(particle, true);
+						particle.destroy();
+					}
+				});
+				
+				// Añadir la partícula al grupo
+				particlesGroup.add(particle);
+			}
+		}
+		
+		// También ocultar el icono correspondiente
+		if (curSelected < iconArray.length)
+		{
+			iconArray[curSelected].visible = false;
+		}
+	}
+	
+	function loadSelectedSong():Void
+	{
+		persistentUpdate = false;
+		var songLowercase:String = Paths.formatToSongPath(songs[curSelected].songName);
+		var poop:String = Highscore.formatSong(songLowercase, curDifficulty);
+
+		try
+		{
+			Song.loadFromJson(poop, songLowercase);
+			PlayState.isStoryMode = false;
+			PlayState.storyDifficulty = curDifficulty;
+
+			trace('CURRENT WEEK: ' + WeekData.getWeekFileName());
+		}
+		catch(e:haxe.Exception)
+		{
+			trace('ERROR! ${e.message}');
+
+			var errorStr:String = e.message;
+			if(errorStr.contains('There is no TEXT asset with an ID of')) errorStr = 'Missing file: ' + errorStr.substring(errorStr.indexOf(songLowercase), errorStr.length-1); //Missing chart
+			else errorStr += '\n\n' + e.stack;
+
+			missingText.text = 'ERROR WHILE LOADING CHART:\n$errorStr';
+			missingText.screenCenter(Y);
+			missingText.visible = true;
+			missingTextBG.visible = true;
+			FlxG.sound.play(Paths.sound('cancelMenu'));
+			
+			isTransitioning = false; // Permitir intentar de nuevo
+			return;
+		}
+
+		@:privateAccess
+		if(PlayState._lastLoadedModDirectory != Mods.currentModDirectory)
+		{
+			trace('CHANGED MOD DIRECTORY, RELOADING STUFF');
+			Paths.freeGraphicsFromMemory();
+		}
+		LoadingState.prepareToSong();
+		LoadingState.loadAndSwitchState(new PlayState());
+		#if !SHOW_LOADING_SCREEN FlxG.sound.music.stop(); #end
+		stopMusicPlay = true;
+
+		destroyFreeplayVocals();
+		#if (MODS_ALLOWED && DISCORD_ALLOWED)
+		DiscordClient.loadModRPC();
+		#end
+	}
+	
 	override function destroy():Void
 	{
 		super.destroy();
